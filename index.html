@@ -3,66 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NR1 - Global Player Analytics</title>
+    <title>NR1 - All Players Overview</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --bg: #0f172a; --card: #1e293b; --primary: #fbbf24; --accent: #8b5cf6; --text: #f8fafc; --border: #334155; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-        .container { max-width: 1200px; margin: auto; }
+        .container { max-width: 1400px; margin: auto; }
         
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        h1 { color: var(--primary); text-transform: uppercase; margin: 0; letter-spacing: 2px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        h1 { color: var(--primary); text-transform: uppercase; margin: 0; letter-spacing: 2px; font-size: 1.5rem; }
 
-        /* Search & Filters */
-        .controls { display: flex; gap: 15px; margin-bottom: 20px; }
-        input { background: var(--card); border: 1px solid var(--border); color: white; padding: 12px; border-radius: 8px; flex: 1; outline: none; }
-
-        /* Table Style */
-        .table-container { background: var(--card); border-radius: 16px; border: 1px solid var(--border); overflow: hidden; }
-        table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { background: rgba(251, 191, 36, 0.1); color: var(--primary); padding: 15px; font-size: 0.8rem; text-transform: uppercase; cursor: pointer; }
-        th:hover { background: rgba(251, 191, 36, 0.2); }
-        td { padding: 12px 15px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-        tr:hover { background: rgba(255,255,255,0.05); }
-
-        /* Dynamic Tags */
-        .tag { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-right: 5px; }
-        .tag-sword { background: var(--accent); color: white; }
-        .tag-bear { background: #ef4444; color: white; }
-        .power-text { color: #10b981; font-weight: bold; }
+        .controls { display: flex; gap: 20px; margin-bottom: 20px; background: var(--card); padding: 15px; border-radius: 12px; border: 1px solid var(--border); align-items: center; }
+        select { background: #0f172a; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 8px; outline: none; min-width: 250px; }
         
-        .empty { padding: 40px; text-align: center; color: #64748b; }
+        .btn { padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; border: none; transition: 0.3s; }
+        .btn-toggle { background: var(--accent); color: white; }
+
+        .view-section { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 20px; min-height: 600px; }
+        #chart-container { display: none; }
+        canvas { width: 100% !important; height: 550px !important; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { color: var(--primary); text-align: left; padding: 12px; border-bottom: 2px solid var(--border); font-size: 0.8rem; }
+        td { padding: 12px; border-bottom: 1px solid var(--border); }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="header">
-        <h1>📊 Global Analytics</h1>
-        <div id="last-update" style="font-size: 0.8rem; color: #64748b;">Syncing with Firebase...</div>
+        <h1>📊 NR1 Global Fleet Monitoring</h1>
+        <button class="btn btn-toggle" onclick="toggleView()">📈 Toggle Chart/Table</button>
     </div>
 
     <div class="controls">
-        <input type="text" id="searchInput" placeholder="Search player name..." onkeyup="filterTable()">
+        <div>
+            <label style="font-size: 0.7rem; color: var(--primary); display: block; margin-bottom: 5px;">ANALYTIC METRIC</label>
+            <select id="metricSelect" onchange="updateChart()">
+                <option value="points">Total Swordland Points (Performance)</option>
+                <option value="power">Power Progression (Growth)</option>
+                <option value="present">Activity Consistency (Presence)</option>
+            </select>
+        </div>
+        <div style="color: #64748b; font-size: 0.85rem; margin-left: auto;">
+            Showing all alliance members across historical data.
+        </div>
     </div>
 
-    <div class="table-container">
-        <table id="analyticsTable">
+    <div id="table-container" class="view-section">
+        <table id="mainTable">
             <thead>
                 <tr>
-                    <th onclick="sortTable(0)">Player Name</th>
-                    <th onclick="sortTable(1)">Power</th>
-                    <th onclick="sortTable(2)">Swordland Pts</th>
-                    <th onclick="sortTable(3)">Bear Trap Pts</th>
-                    <th onclick="sortTable(4)">Participation</th>
-                    <th id="future-header">Future Stats</th>
+                    <th>Player</th>
+                    <th>Current Power</th>
+                    <th>Last Score</th>
+                    <th>Trend</th>
                 </tr>
             </thead>
-            <tbody id="tableBody">
-                <!-- Data will be injected here -->
-            </tbody>
+            <tbody id="tableBody"></tbody>
         </table>
+    </div>
+
+    <div id="chart-container" class="view-section">
+        <canvas id="allPlayersChart"></canvas>
     </div>
 </div>
 
@@ -76,73 +81,113 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    function fetchGlobalData() {
-        // On récupère tout en une seule fois pour croiser les données
+    let isChartView = false;
+    let masterData = {};
+    let chartInstance = null;
+
+    // Générateur de couleurs pour éviter les doublons visuels
+    function getHSLA(index, total) {
+        return `hsla(${(index * (360 / total)) % 360}, 70%, 60%, 0.8)`;
+    }
+
+    function toggleView() {
+        isChartView = !isChartView;
+        document.getElementById('table-container').style.display = isChartView ? 'none' : 'block';
+        document.getElementById('chart-container').style.display = isChartView ? 'block' : 'none';
+        if(isChartView) updateChart();
+    }
+
+    function loadData() {
         db.ref().on('value', snap => {
-            const data = snap.val() || {};
-            const players = data.alliance_database || {};
-            const swordReports = data.swordland?.reports || {};
-            const bearReports = data.beartrap?.reports || {}; // Prévu pour ta prochaine page
-            
-            const tableBody = document.getElementById('tableBody');
-            tableBody.innerHTML = "";
-
-            // Transformation en tableau d'objets pour manipulation facile
-            const masterList = Object.keys(players).map(id => {
-                const p = players[id];
-                const sword = swordReports[id] || { points: 0, present: false };
-                const bear = bearReports[id] || { points: 0, present: false };
-
-                return {
-                    name: p.name,
-                    power: p.power || 0,
-                    swordPts: sword.points || 0,
-                    bearPts: bear.points || 0,
-                    attendance: (sword.present ? 1 : 0) + (bear.present ? 1 : 0),
-                    // Ici on pourra ajouter n'importe quelle future branche
-                    raw: data // On garde l'accès au reste si besoin
-                };
-            });
-
-            // Tri par puissance par défaut
-            masterList.sort((a,b) => b.power - a.power);
-
-            masterList.forEach(m => {
-                const row = `<tr>
-                    <td><b>${m.name}</b></td>
-                    <td class="power-text">${m.power}M</td>
-                    <td>${m.swordPts.toLocaleString()}</td>
-                    <td>${m.bearPts.toLocaleString()}</td>
-                    <td>
-                        ${m.attendance > 0 ? `<span class="tag tag-sword">${m.attendance} Event(s)</span>` : '<span style="opacity:0.3">-</span>'}
-                    </td>
-                    <td style="color:#64748b">...</td>
-                </tr>`;
-                tableBody.innerHTML += row;
-            });
-
-            document.getElementById('last-update').innerText = "Last sync: " + new Date().toLocaleTimeString();
+            masterData = snap.val() || {};
+            renderTable();
+            if(isChartView) updateChart();
         });
     }
 
-    // Fonctions utilitaires : Recherche et Tri
-    function filterTable() {
-        let input = document.getElementById("searchInput").value.toUpperCase();
-        let rows = document.getElementById("tableBody").getElementsByTagName("tr");
-        for (let i = 0; i < rows.length; i++) {
-            let name = rows[i].getElementsByTagName("td")[0];
-            if (name) {
-                rows[i].style.display = name.innerText.toUpperCase().indexOf(input) > -1 ? "" : "none";
+    function renderTable() {
+        const players = masterData.alliance_database || {};
+        const sword = masterData.swordland?.reports || {};
+        const body = document.getElementById('tableBody');
+        body.innerHTML = "";
+        Object.keys(players).sort((a,b) => players[b].power - players[a].power).forEach(id => {
+            const p = players[id];
+            const s = sword[id] || { points: 0 };
+            body.innerHTML += `<tr>
+                <td><b>${p.name}</b></td>
+                <td style="color:#10b981">${p.power}M</td>
+                <td>${s.points.toLocaleString()}</td>
+                <td><span style="color:#64748b">Stable</span></td>
+            </tr>`;
+        });
+    }
+
+    function updateChart() {
+        const metric = document.getElementById('metricSelect').value;
+        const archives = masterData.swordland_archives || {};
+        const dates = Object.keys(archives).sort();
+        const players = masterData.alliance_database || {};
+        const playerIds = Object.keys(players);
+
+        const datasets = playerIds.map((id, index) => {
+            const dataPoints = dates.map(date => {
+                const dayData = archives[date];
+                if (metric === 'points') return dayData.reports?.[id]?.points || 0;
+                if (metric === 'power') return dayData.alliance_database?.[id]?.power || 0;
+                if (metric === 'present') return dayData.reports?.[id]?.present ? 1 : 0;
+                return 0;
+            });
+
+            // On ne trace la ligne que si le joueur a au moins une donnée > 0
+            if (dataPoints.every(v => v === 0)) return null;
+
+            const color = getHSLA(index, playerIds.length);
+            return {
+                label: players[id].name,
+                data: dataPoints,
+                borderColor: color,
+                backgroundColor: color.replace('0.8', '0.1'),
+                borderWidth: 2,
+                pointRadius: 3,
+                tension: 0.2
+            };
+        }).filter(d => d !== null);
+
+        const ctx = document.getElementById('allPlayersChart').getContext('2d');
+        if(chartInstance) chartInstance.destroy();
+
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: { labels: dates, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { 
+                        beginAtZero: true, 
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#94a3b8' }
+                    },
+                    x: { ticks: { color: '#94a3b8' } }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'right',
+                        labels: { color: '#f8fafc', boxWidth: 10, font: { size: 10 } }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleColor: '#fbbf24',
+                        bodySpacing: 5
+                    }
+                }
             }
-        }
+        });
     }
 
-    function sortTable(n) {
-        // Logique de tri simplifiée pour l'exemple
-        console.log("Sorting by column " + n);
-    }
-
-    fetchGlobalData();
+    loadData();
 </script>
 </body>
 </html>
