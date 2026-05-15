@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NR1 - All Players Overview</title>
+    <title>NR1 - Fleet Performance Analytics</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -34,21 +34,20 @@
 
 <div class="container">
     <div class="header">
-        <h1>📊 NR1 Global Fleet Monitoring</h1>
+        <h1>📊 NR1 Global Performance Monitoring</h1>
         <button class="btn btn-toggle" onclick="toggleView()">📈 Toggle Chart/Table</button>
     </div>
 
     <div class="controls">
         <div>
-            <label style="font-size: 0.7rem; color: var(--primary); display: block; margin-bottom: 5px;">ANALYTIC METRIC</label>
+            <label style="font-size: 0.7rem; color: var(--primary); display: block; margin-bottom: 5px;">SELECT METRIC TYPE</label>
             <select id="metricSelect" onchange="updateChart()">
-                <option value="points">Total Swordland Points (Performance)</option>
-                <option value="power">Power Progression (Growth)</option>
-                <option value="present">Activity Consistency (Presence)</option>
+                <option value="swordland">⚔️ Swordland (Points & Presence)</option>
+                <option value="beartrap">🐻 Bear Trap (Misplay & Errors Counter)</option>
             </select>
         </div>
-        <div style="color: #64748b; font-size: 0.85rem; margin-left: auto;">
-            Showing all alliance members across historical data.
+        <div style="color: #64748b; font-size: 0.85rem; margin-left: auto;" id="metric-desc">
+            Displaying chronological progression of all alliance members.
         </div>
     </div>
 
@@ -56,10 +55,10 @@
         <table id="mainTable">
             <thead>
                 <tr>
-                    <th>Player</th>
+                    <th>Player Name</th>
                     <th>Current Power</th>
-                    <th>Last Score</th>
-                    <th>Trend</th>
+                    <th>Last Swordland Score</th>
+                    <th>Active Status</th>
                 </tr>
             </thead>
             <tbody id="tableBody"></tbody>
@@ -85,9 +84,8 @@
     let masterData = {};
     let chartInstance = null;
 
-    // Générateur de couleurs pour éviter les doublons visuels
     function getHSLA(index, total) {
-        return `hsla(${(index * (360 / total)) % 360}, 70%, 60%, 0.8)`;
+        return `hsla(${(index * (360 / total)) % 360}, 75%, 60%, 0.85)`;
     }
 
     function toggleView() {
@@ -110,35 +108,60 @@
         const sword = masterData.swordland?.reports || {};
         const body = document.getElementById('tableBody');
         body.innerHTML = "";
+        
         Object.keys(players).sort((a,b) => players[b].power - players[a].power).forEach(id => {
             const p = players[id];
-            const s = sword[id] || { points: 0 };
+            const s = sword[id] || { points: 0, present: false };
             body.innerHTML += `<tr>
                 <td><b>${p.name}</b></td>
                 <td style="color:#10b981">${p.power}M</td>
                 <td>${s.points.toLocaleString()}</td>
-                <td><span style="color:#64748b">Stable</span></td>
+                <td>${s.present ? '🟢 Active' : '⚪ No Data'}</td>
             </tr>`;
         });
     }
 
     function updateChart() {
-        const metric = document.getElementById('metricSelect').value;
+        const selectedMode = document.getElementById('metricSelect').value;
         const archives = masterData.swordland_archives || {};
         const dates = Object.keys(archives).sort();
         const players = masterData.alliance_database || {};
         const playerIds = Object.keys(players);
+        
+        const descDiv = document.getElementById('metric-desc');
+
+        if(selectedMode === 'swordland') {
+            descDiv.innerText = "Y-Axis: Total Points Scored. A drop to 0 means the player was absent.";
+        } else {
+            descDiv.innerText = "Y-Axis: Number of recorded misplays/errors during the Bear Trap.";
+        }
 
         const datasets = playerIds.map((id, index) => {
             const dataPoints = dates.map(date => {
-                const dayData = archives[date];
-                if (metric === 'points') return dayData.reports?.[id]?.points || 0;
-                if (metric === 'power') return dayData.alliance_database?.[id]?.power || 0;
-                if (metric === 'present') return dayData.reports?.[id]?.present ? 1 : 0;
+                const archiveSnapshot = archives[date];
+                
+                if (selectedMode === 'swordland') {
+                    const report = archiveSnapshot.reports?.[id] || {};
+                    // Si présent = true, on prend les points (qui peuvent être à 0 si pas scoré). 
+                    // Si absent ou pas de rapport, on force à 0.
+                    return report.present ? (report.points || 0) : 0;
+                } 
+                
+                if (selectedMode === 'beartrap') {
+                    const bearReports = archiveSnapshot.beartrap?.reports?.[id] || {};
+                    // Compter le nombre de signalements d'erreurs pour ce joueur à cette date précise
+                    let errorCount = 0;
+                    Object.keys(bearReports).forEach(key => {
+                        if(bearReports[key].errors) {
+                            errorCount += bearReports[key].errors.length;
+                        }
+                    });
+                    return errorCount;
+                }
                 return 0;
             });
 
-            // On ne trace la ligne que si le joueur a au moins une donnée > 0
+            // On évite d'afficher les joueurs qui n'ont absolument aucun historique pour épurer le graphique
             if (dataPoints.every(v => v === 0)) return null;
 
             const color = getHSLA(index, playerIds.length);
@@ -146,10 +169,10 @@
                 label: players[id].name,
                 data: dataPoints,
                 borderColor: color,
-                backgroundColor: color.replace('0.8', '0.1'),
-                borderWidth: 2,
-                pointRadius: 3,
-                tension: 0.2
+                backgroundColor: color.replace('0.85', '0.1'),
+                borderWidth: selectedMode === 'beartrap' ? 3 : 2, // Lignes plus épaisses pour les erreurs
+                pointRadius: 4,
+                tension: selectedMode === 'beartrap' ? 0 : 0.2 // Lignes droites (créneaux) pour les fautes
             };
         }).filter(d => d !== null);
 
@@ -166,10 +189,19 @@
                 scales: {
                     y: { 
                         beginAtZero: true, 
+                        title: { 
+                            display: true, 
+                            text: selectedMode === 'swordland' ? 'Points Scored' : 'Number of Errors',
+                            color: '#fbbf24'
+                        },
                         grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#94a3b8' }
+                        ticks: { 
+                            color: '#94a3b8',
+                            // Pour le mode beartrap, on force des nombres entiers (0, 1, 2 erreurs...)
+                            stepSize: selectedMode === 'beartrap' ? 1 : null 
+                        }
                     },
-                    x: { ticks: { color: '#94a3b8' } }
+                    x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
                 },
                 plugins: {
                     legend: {
@@ -178,9 +210,11 @@
                         labels: { color: '#f8fafc', boxWidth: 10, font: { size: 10 } }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
                         titleColor: '#fbbf24',
-                        bodySpacing: 5
+                        bodySpacing: 4,
+                        borderColor: '#334155',
+                        borderWidth: 1
                     }
                 }
             }
