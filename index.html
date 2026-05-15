@@ -3,70 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NR1 - Fleet Performance Analytics</title>
+    <title>NR1 - Global Restitution</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root { --bg: #0f172a; --card: #1e293b; --primary: #fbbf24; --accent: #8b5cf6; --text: #f8fafc; --border: #334155; }
+        :root { --bg: #0f172a; --card: #1e293b; --primary: #fbbf24; --accent: #8b5cf6; --text: #f8fafc; --border: #334155; --danger: #ef4444; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-        .container { max-width: 1400px; margin: auto; }
+        .container { max-width: 1300px; margin: auto; }
         
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         h1 { color: var(--primary); text-transform: uppercase; margin: 0; letter-spacing: 2px; font-size: 1.5rem; }
 
         .controls { display: flex; gap: 20px; margin-bottom: 20px; background: var(--card); padding: 15px; border-radius: 12px; border: 1px solid var(--border); align-items: center; }
-        select { background: #0f172a; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 8px; outline: none; min-width: 250px; }
-        
-        .btn { padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; border: none; transition: 0.3s; }
-        .btn-toggle { background: var(--accent); color: white; }
+        select, input { background: #0f172a; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 8px; outline: none; }
+        select { min-width: 220px; cursor: pointer; }
+        input { flex: 1; }
 
-        .view-section { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 20px; min-height: 600px; }
-        #chart-container { display: none; }
-        canvas { width: 100% !important; height: 550px !important; }
+        .view-section { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 20px; overflow-x: auto; }
         
-        table { width: 100%; border-collapse: collapse; }
-        th { color: var(--primary); text-align: left; padding: 12px; border-bottom: 2px solid var(--border); font-size: 0.8rem; }
-        td { padding: 12px; border-bottom: 1px solid var(--border); }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { color: var(--primary); padding: 15px; border-bottom: 2px solid var(--border); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+        td { padding: 12px 15px; border-bottom: 1px solid var(--border); font-size: 0.95rem; }
+        tr:hover { background: rgba(255, 255, 255, 0.02); }
+        
+        .power-text { color: #10b981; font-weight: bold; }
+        .tag { padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; display: inline-block; }
+        .tag-ok { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .tag-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); margin: 2px; }
+        .no-data { opacity: 0.4; font-style: italic; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="header">
-        <h1>📊 NR1 Global Performance Monitoring</h1>
-        <button class="btn btn-toggle" onclick="toggleView()">📈 Toggle Chart/Table</button>
+        <h1>📊 NR1 Alliance Global Restitution</h1>
+        <div style="color: #64748b; font-size: 0.85rem;" id="sync-status">Syncing...</div>
     </div>
 
     <div class="controls">
         <div>
-            <label style="font-size: 0.7rem; color: var(--primary); display: block; margin-bottom: 5px;">SELECT METRIC TYPE</label>
-            <select id="metricSelect" onchange="updateChart()">
-                <option value="swordland">⚔️ Swordland (Points & Presence)</option>
-                <option value="beartrap">🐻 Bear Trap (Misplay & Errors Counter)</option>
+            <label style="font-size: 0.7rem; color: var(--primary); display: block; margin-bottom: 5px;">FILTER EVENT</label>
+            <select id="eventSelect" onchange="renderTable()">
+                <option value="swordland">⚔️ Swordland Data</option>
+                <option value="beartrap">🐻 Bear Trap Data (Detailed)</option>
             </select>
         </div>
-        <div style="color: #64748b; font-size: 0.85rem; margin-left: auto;" id="metric-desc">
-            Displaying chronological progression of all alliance members.
+        <div style="flex: 1;">
+            <label style="font-size: 0.7rem; color: var(--primary); display: block; margin-bottom: 5px;">SEARCH PLAYER</label>
+            <input type="text" id="searchInput" placeholder="Type a name to filter..." onkeyup="filterTable()">
         </div>
     </div>
 
-    <div id="table-container" class="view-section">
-        <table id="mainTable">
-            <thead>
-                <tr>
-                    <th>Player Name</th>
-                    <th>Current Power</th>
-                    <th>Last Swordland Score</th>
-                    <th>Active Status</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
+    <div class="view-section">
+        <table id="dataTable">
+            <thead id="tableHeader">
+                </thead>
+            <tbody id="tableBody">
+                </tbody>
         </table>
-    </div>
-
-    <div id="chart-container" class="view-section">
-        <canvas id="allPlayersChart"></canvas>
     </div>
 </div>
 
@@ -80,145 +75,135 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    let isChartView = false;
     let masterData = {};
-    let chartInstance = null;
-
-    function getHSLA(index, total) {
-        return `hsla(${(index * (360 / total)) % 360}, 75%, 60%, 0.85)`;
-    }
-
-    function toggleView() {
-        isChartView = !isChartView;
-        document.getElementById('table-container').style.display = isChartView ? 'none' : 'block';
-        document.getElementById('chart-container').style.display = isChartView ? 'block' : 'none';
-        if(isChartView) updateChart();
-    }
 
     function loadData() {
         db.ref().on('value', snap => {
             masterData = snap.val() || {};
             renderTable();
-            if(isChartView) updateChart();
+            document.getElementById('sync-status').innerText = "Live Synchronized";
         });
     }
 
     function renderTable() {
+        const currentEvent = document.getElementById('eventSelect').value;
         const players = masterData.alliance_database || {};
-        const sword = masterData.swordland?.reports || {};
+        
+        const header = document.getElementById('tableHeader');
         const body = document.getElementById('tableBody');
+        
         body.innerHTML = "";
-        
-        Object.keys(players).sort((a,b) => players[b].power - players[a].power).forEach(id => {
-            const p = players[id];
-            const s = sword[id] || { points: 0, present: false };
-            body.innerHTML += `<tr>
-                <td><b>${p.name}</b></td>
-                <td style="color:#10b981">${p.power}M</td>
-                <td>${s.points.toLocaleString()}</td>
-                <td>${s.present ? '🟢 Active' : '⚪ No Data'}</td>
-            </tr>`;
-        });
-    }
 
-    function updateChart() {
-        const selectedMode = document.getElementById('metricSelect').value;
-        const archives = masterData.swordland_archives || {};
-        const dates = Object.keys(archives).sort();
-        const players = masterData.alliance_database || {};
-        const playerIds = Object.keys(players);
-        
-        const descDiv = document.getElementById('metric-desc');
-
-        if(selectedMode === 'swordland') {
-            descDiv.innerText = "Y-Axis: Total Points Scored. A drop to 0 means the player was absent.";
-        } else {
-            descDiv.innerText = "Y-Axis: Number of recorded misplays/errors during the Bear Trap.";
+        // 1. ADAPTATION DE L'ENTÊTE (Ajout des deux colonnes pour le Bear Trap)
+        if (currentEvent === 'swordland') {
+            header.innerHTML = `
+                <tr>
+                    <th>Player Name</th>
+                    <th>Current Power</th>
+                    <th>Presence Status</th>
+                    <th>Points Scored</th>
+                </tr>`;
+        } else if (currentEvent === 'beartrap') {
+            header.innerHTML = `
+                <tr>
+                    <th>Player Name</th>
+                    <th>Current Power</th>
+                    <th>Trap 1 Misplays</th>
+                    <th>Trap 2 Misplays</th>
+                </tr>`;
         }
 
-        const datasets = playerIds.map((id, index) => {
-            const dataPoints = dates.map(date => {
-                const archiveSnapshot = archives[date];
-                
-                if (selectedMode === 'swordland') {
-                    const report = archiveSnapshot.reports?.[id] || {};
-                    // Si présent = true, on prend les points (qui peuvent être à 0 si pas scoré). 
-                    // Si absent ou pas de rapport, on force à 0.
-                    return report.present ? (report.points || 0) : 0;
-                } 
-                
-                if (selectedMode === 'beartrap') {
-                    const bearReports = archiveSnapshot.beartrap?.reports?.[id] || {};
-                    // Compter le nombre de signalements d'erreurs pour ce joueur à cette date précise
-                    let errorCount = 0;
-                    Object.keys(bearReports).forEach(key => {
-                        if(bearReports[key].errors) {
-                            errorCount += bearReports[key].errors.length;
+        // Compilation et préparation des données pour le tri
+        const sortedPlayerIds = Object.keys(players).map(id => {
+            let t1Errors = [];
+            let t2Errors = [];
+            
+            if (currentEvent === 'beartrap') {
+                const bData = masterData.beartrap?.reports?.[id] || {};
+                Object.keys(bData).forEach(key => {
+                    const report = bData[key];
+                    if (report.errors) {
+                        // Tri sélectif selon la valeur du piège ("Trap 1" ou "Trap 2")
+                        if (report.trap === 'Trap 1') {
+                            t1Errors = t1Errors.concat(report.errors);
+                        } else if (report.trap === 'Trap 2') {
+                            t2Errors = t2Errors.concat(report.errors);
                         }
-                    });
-                    return errorCount;
-                }
-                return 0;
-            });
-
-            // On évite d'afficher les joueurs qui n'ont absolument aucun historique pour épurer le graphique
-            if (dataPoints.every(v => v === 0)) return null;
-
-            const color = getHSLA(index, playerIds.length);
-            return {
-                label: players[id].name,
-                data: dataPoints,
-                borderColor: color,
-                backgroundColor: color.replace('0.85', '0.1'),
-                borderWidth: selectedMode === 'beartrap' ? 3 : 2, // Lignes plus épaisses pour les erreurs
-                pointRadius: 4,
-                tension: selectedMode === 'beartrap' ? 0 : 0.2 // Lignes droites (créneaux) pour les fautes
-            };
-        }).filter(d => d !== null);
-
-        const ctx = document.getElementById('allPlayersChart').getContext('2d');
-        if(chartInstance) chartInstance.destroy();
-
-        chartInstance = new Chart(ctx, {
-            type: 'line',
-            data: { labels: dates, datasets: datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                scales: {
-                    y: { 
-                        beginAtZero: true, 
-                        title: { 
-                            display: true, 
-                            text: selectedMode === 'swordland' ? 'Points Scored' : 'Number of Errors',
-                            color: '#fbbf24'
-                        },
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { 
-                            color: '#94a3b8',
-                            // Pour le mode beartrap, on force des nombres entiers (0, 1, 2 erreurs...)
-                            stepSize: selectedMode === 'beartrap' ? 1 : null 
-                        }
-                    },
-                    x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
-                },
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'right',
-                        labels: { color: '#f8fafc', boxWidth: 10, font: { size: 10 } }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#fbbf24',
-                        bodySpacing: 4,
-                        borderColor: '#334155',
-                        borderWidth: 1
                     }
+                });
+            }
+
+            return {
+                id: id,
+                name: players[id].name,
+                power: players[id].power || 0,
+                t1Count: t1Errors.length,
+                t2Count: t2Errors.length,
+                totalErrors: t1Errors.length + t2Errors.length,
+                t1Details: t1Errors,
+                t2Details: t2Errors
+            };
+        });
+
+        // 2. LOGIQUE DE TRI DYNAMIQUE
+        if (currentEvent === 'swordland') {
+            sortedPlayerIds.sort((a, b) => b.power - a.power);
+        } else if (currentEvent === 'beartrap') {
+            // Tri par le TOTAL des erreurs des deux pièges combinés (les pires en haut)
+            sortedPlayerIds.sort((a, b) => {
+                if (b.totalErrors !== a.totalErrors) {
+                    return b.totalErrors - a.totalErrors;
+                }
+                return b.power - a.power;
+            });
+        }
+
+        // 3. INJECTION DES DONNÉES DANS LE TABLEAU
+        sortedPlayerIds.forEach(playerObj => {
+            const id = playerObj.id;
+            const p = players[id];
+            let rowHtml = `<td><b>${p.name}</b></td><td class="power-text">${p.power}M</td>`;
+
+            if (currentEvent === 'swordland') {
+                const sData = masterData.swordland?.reports?.[id] || { points: 0, present: false };
+                rowHtml += `
+                    <td>${sData.present ? '<span class="tag tag-ok">✅ Present</span>' : '<span class="tag tag-danger">❌ Absent</span>'}</td>
+                    <td><b>${sData.present ? sData.points.toLocaleString() : '-'}</b></td>`;
+            } 
+            
+            else if (currentEvent === 'beartrap') {
+                // Remplissage Colonne TRAP 1
+                if (playerObj.t1Count === 0) {
+                    rowHtml += `<td><span class="tag tag-ok">🟢 Clean</span></td>`;
+                } else {
+                    const tagsT1 = playerObj.t1Details.map(err => `<span class="tag tag-danger" style="font-size:0.7rem;">${err}</span>`).join(' ');
+                    rowHtml += `<td><div style="margin-bottom:4px;"><span class="tag tag-danger">⚠️ ${playerObj.t1Count} Error(s)</span></div>${tagsT1}</td>`;
+                }
+
+                // Remplissage Colonne TRAP 2
+                if (playerObj.t2Count === 0) {
+                    rowHtml += `<td><span class="tag tag-ok">🟢 Clean</span></td>`;
+                } else {
+                    const tagsT2 = playerObj.t2Details.map(err => `<span class="tag tag-danger" style="font-size:0.7rem;">${err}</span>`).join(' ');
+                    rowHtml += `<td><div style="margin-bottom:4px;"><span class="tag tag-danger">⚠️ ${playerObj.t2Count} Error(s)</span></div>${tagsT2}</td>`;
                 }
             }
+
+            body.innerHTML += `<tr>${rowHtml}</tr>`;
         });
+        
+        filterTable();
+    }
+
+    function filterTable() {
+        const input = document.getElementById("searchInput").value.toUpperCase();
+        const rows = document.getElementById("tableBody").getElementsByTagName("tr");
+        for (let i = 0; i < rows.length; i++) {
+            let nameCell = rows[i].getElementsByTagName("td")[0];
+            if (nameCell) {
+                rows[i].style.display = nameCell.innerText.toUpperCase().indexOf(input) > -1 ? "" : "none";
+            }
+        }
     }
 
     loadData();
