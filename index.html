@@ -27,6 +27,7 @@
         tr:hover { background: rgba(255, 255, 255, 0.02); }
         
         .power-text { color: #10b981; font-weight: bold; }
+        .points-text { color: #34d399; font-weight: bold; font-size: 0.95rem; }
         .tag { padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; display: inline-block; }
         .tag-ok { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
         .tag-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); margin: 2px; }
@@ -45,8 +46,8 @@
         <div>
             <label style="font-size: 0.7rem; color: var(--primary); display: block; margin-bottom: 5px;">FILTER EVENT</label>
             <select id="eventSelect" onchange="renderTable()">
-                <option value="swordland">⚔️ Swordland Data</option>
-                <option value="beartrap">🐻 Bear Trap Data (Detailed)</option>
+                <option value="beartrap" selected>🐻 Bear Trap Data (Detailed)</option>
+                <option value="swordland">⚔️ Swordland Data (Experience)</option>
             </select>
         </div>
         <div style="flex: 1;">
@@ -57,14 +58,12 @@
 
     <div class="view-section">
         <table id="dataTable">
-            <thead id="tableHeader">
-                </thead>
-            <tbody id="tableBody">
-                </tbody>
+            <thead id="tableHeader"></thead>
+            <tbody id="tableBody"></tbody>
         </table>
-		<button onclick="cleanBearTrapDatabase()" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 20px; text-transform: uppercase;">
-    🗑️ Clear Bear Trap
-</button>
+        <button onclick="cleanBearTrapDatabase()" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 20px; text-transform: uppercase;">
+            🗑️ Clear Bear Trap
+        </button>
     </div>
 </div>
 
@@ -88,8 +87,12 @@
         });
     }
 
+    // Adapte l'affichage des clés de date (fonctionne pour "YYYY-MM-DD" et pour les semaines "YYYY-WXX")
     function formatDisplayDate(dateStr) {
         if(!dateStr) return "";
+        if(dateStr.includes('-W')) {
+            return dateStr.replace('-W', ' / W'); // Exemple: 2026 / W20
+        }
         const parts = dateStr.split('-');
         if(parts.length < 3) return dateStr;
         return `${parts[2]}/${parts[1]}`;
@@ -104,7 +107,7 @@
         
         body.innerHTML = "";
 
-        // Trouver dynamiquement les 4 dates les plus récentes globales
+        // Trouver dynamiquement les 4 dates/semaines les plus récentes globales selon l'événement choisi
         let uniqueDates = new Set();
         if (currentEvent === 'beartrap' && masterData.beartrap?.reports) {
             Object.keys(masterData.beartrap.reports).forEach(pId => {
@@ -112,44 +115,41 @@
                     uniqueDates.add(dateKey);
                 });
             });
+        } else if (currentEvent === 'swordland' && masterData.experience_reports) {
+            // SÉCURITÉ & CORRECTION : On pointe directement sur experience_reports (généré par ta page Experience)
+            Object.keys(masterData.experience_reports).forEach(pId => {
+                Object.keys(masterData.experience_reports[pId]).forEach(weekKey => {
+                    uniqueDates.add(weekKey);
+                });
+            });
         }
         const last4Dates = Array.from(uniqueDates).sort((a, b) => b.localeCompare(a)).slice(0, 4);
 
-        // 1. GENERATION DE L'ENTÊTE
-        if (currentEvent === 'swordland') {
-            header.innerHTML = `
-                <tr>
-                    <th>Player Name</th>
-                    <th>Current Power</th>
-                    <th>Presence Status</th>
-                    <th>Points Scored</th>
-                </tr>`;
-        } else if (currentEvent === 'beartrap') {
-            let dateHeadersHtml = "";
-            for (let i = 0; i < 4; i++) {
-                if (last4Dates[i]) {
-                    dateHeadersHtml += `<th>Report ${formatDisplayDate(last4Dates[i])}</th>`;
-                } else {
-                    dateHeadersHtml += `<th>No Data Yet</th>`;
-                }
+        // 1. GENERATION DE L'ENTÊTE DYNAMIQUE (4 colonnes de rapports)
+        let dateHeadersHtml = "";
+        for (let i = 0; i < 4; i++) {
+            if (last4Dates[i]) {
+                dateHeadersHtml += `<th>${currentEvent === 'swordland' ? 'Week' : 'Report'} ${formatDisplayDate(last4Dates[i])}</th>`;
+            } else {
+                dateHeadersHtml += `<th>No Data Yet</th>`;
             }
-            header.innerHTML = `
-                <tr>
-                    <th>Player Name</th>
-                    <th>Current Power</th>
-                    ${dateHeadersHtml}
-                </tr>`;
         }
 
-        // Préparation et compilation des données
+        header.innerHTML = `
+            <tr>
+                <th>Player Name</th>
+                <th>Current Power</th>
+                ${dateHeadersHtml}
+            </tr>`;
+
+        // Préparation et compilation des données des joueurs
         const sortedPlayerIds = Object.keys(players).map(id => {
-            let totalErrorsLast4Days = 0; // Compteur spécifique aux 4 colonnes affichées
+            let totalErrorsLast4Days = 0; 
+            let totalPointsLast4Weeks = 0;
             let historyByDate = {};
 
             if (currentEvent === 'beartrap') {
                 const bData = masterData.beartrap?.reports?.[id] || {};
-                
-                // On extrait uniquement les données et les erreurs des 4 dates ciblées
                 last4Dates.forEach(dateKey => {
                     const dayReport = bData[dateKey];
                     if (dayReport && dayReport.errors && dayReport.errors.length > 0) {
@@ -157,10 +157,26 @@
                             errors: dayReport.errors,
                             trap: dayReport.trap
                         };
-                        // Ajout au cumul du tri dynamique
                         totalErrorsLast4Days += dayReport.errors.length;
                     } else {
                         historyByDate[dateKey] = null;
+                    }
+                });
+            } else if (currentEvent === 'swordland') {
+                // SÉCURITÉ & CORRECTION : On extrait les données de experience_reports
+                const sData = masterData.experience_reports?.[id] || {};
+                last4Dates.forEach(weekKey => {
+                    const weekReport = sData[weekKey];
+                    if (weekReport) {
+                        historyByDate[weekKey] = {
+                            present: weekReport.present !== undefined ? weekReport.present : true,
+                            score: parseInt(weekReport.score) || 0
+                        };
+                        if (weekReport.present && weekReport.score > 0) {
+                            totalPointsLast4Weeks += parseInt(weekReport.score) || 0;
+                        }
+                    } else {
+                        historyByDate[weekKey] = null;
                     }
                 });
             }
@@ -169,21 +185,26 @@
                 id: id,
                 name: players[id].name,
                 power: players[id].power || 0,
-                totalErrors: totalErrorsLast4Days, // Stocke uniquement la somme des 4 dates actives
+                totalErrors: totalErrorsLast4Days, 
+                totalPoints: totalPointsLast4Weeks,
                 historyByDate: historyByDate
             };
         });
 
-        // 2. LOGIQUE DE TRI MIS À JOUR
-        if (currentEvent === 'swordland') {
-            sortedPlayerIds.sort((a, b) => b.power - a.power);
-        } else if (currentEvent === 'beartrap') {
-            // Tri décroissant basé sur le cumul des erreurs des 4 rapports affichés
+        // 2. LOGIQUE DE TRI DYNAMIQUE
+        if (currentEvent === 'beartrap') {
             sortedPlayerIds.sort((a, b) => {
                 if (b.totalErrors !== a.totalErrors) {
-                    return b.totalErrors - a.totalErrors; // Le plus d'erreurs en haut
+                    return b.totalErrors - a.totalErrors; // Plus d'erreurs en haut
                 }
-                return b.power - a.power; // En cas d'égalité, tri par puissance
+                return b.power - a.power; 
+            });
+        } else if (currentEvent === 'swordland') {
+            sortedPlayerIds.sort((a, b) => {
+                if (b.totalPoints !== a.totalPoints) {
+                    return b.totalPoints - a.totalPoints; // Plus de points d'expérience en haut
+                }
+                return b.power - a.power; 
             });
         }
 
@@ -193,22 +214,15 @@
             const p = players[id];
             let rowHtml = `<td><b>${p.name}</b></td><td class="power-text">${p.power}M</td>`;
 
-            if (currentEvent === 'swordland') {
-                const sData = masterData.swordland?.reports?.[id] || { points: 0, present: false };
-                rowHtml += `
-                    <td>${sData.present ? '<span class="tag tag-ok">✅ Present</span>' : '<span class="tag tag-danger">❌ Absent</span>'}</td>
-                    <td><b>${sData.present ? sData.points.toLocaleString() : '-'}</b></td>`;
-            } 
-            
-            else if (currentEvent === 'beartrap') {
-                for (let i = 0; i < 4; i++) {
-                    const targetDate = last4Dates[i];
+            for (let i = 0; i < 4; i++) {
+                const targetDate = last4Dates[i];
+                
+                if (!targetDate) {
+                    rowHtml += `<td><span class="no-data">-</span></td>`;
+                } else {
+                    const dayData = playerObj.historyByDate[targetDate];
                     
-                    if (!targetDate) {
-                        rowHtml += `<td><span class="no-data">-</span></td>`;
-                    } else {
-                        const dayData = playerObj.historyByDate[targetDate];
-                        
+                    if (currentEvent === 'beartrap') {
                         if (!dayData) {
                             rowHtml += `<td><span class="tag tag-ok">🟢 Clean</span></td>`;
                         } else {
@@ -218,6 +232,18 @@
                             rowHtml += `<td>
                                 <div style="margin-bottom:3px;"><span class="tag tag-danger" style="background: #ef4444; color: white;">⚠️ ${labelTrap} (${dayData.errors.length})</span></div>
                                 <div>${tagsHtml}</div>
+                            </td>`;
+                        }
+                    } 
+                    else if (currentEvent === 'swordland') {
+                        if (!dayData) {
+                            rowHtml += `<td><span class="no-data">Not evaluated</span></td>`;
+                        } else if (!dayData.present) {
+                            rowHtml += `<td><span class="tag tag-danger">❌ Absent</span></td>`;
+                        } else {
+                            rowHtml += `<td>
+                                <div style="margin-bottom:2px;"><span class="tag tag-ok">✅ Present</span></div>
+                                <div class="points-text">${dayData.score.toLocaleString()} pts</div>
                             </td>`;
                         }
                     }
@@ -242,19 +268,18 @@
     }
 
     loadData();
-	
-	
-	function cleanBearTrapDatabase() {
-    if (!confirm("ATTENTION : Cela va supprimer définitivement TOUT l'historique des rapports Bear Trap. Les autres données (Swordland, membres, etc.) ne seront pas touchées. Voulez-vous continuer ?")) return;
     
-    db.ref('beartrap/reports').remove()
-        .then(() => { 
-            alert("La base de données Bear Trap a été nettoyée avec succès !"); 
-        })
-        .catch((error) => { 
-            alert("Erreur lors du nettoyage : " + error.message); 
-        });
-}
+    function cleanBearTrapDatabase() {
+        if (!confirm("ATTENTION : Cela va supprimer définitivement TOUT l'historique des rapports Bear Trap. Les autres données (Swordland, membres, etc.) ne seront pas touchées. Voulez-vous continuer ?")) return;
+        
+        db.ref('beartrap/reports').remove()
+            .then(() => { 
+                alert("La base de données Bear Trap a été nettoyée avec succès !"); 
+            })
+            .catch((error) => { 
+                alert("Erreur lors du nettoyage : " + error.message); 
+            });
+    }
 </script>
 </body>
 </html>
