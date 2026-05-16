@@ -22,7 +22,7 @@
         .view-section { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 20px; overflow-x: auto; }
         
         table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { color: var(--primary); padding: 15px; border-bottom: 2px solid var(--border); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+        th { color: var(--primary); padding: 15px; border-bottom: 2px solid var(--border); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
         td { padding: 12px 15px; border-bottom: 1px solid var(--border); font-size: 0.95rem; }
         tr:hover { background: rgba(255, 255, 255, 0.02); }
         
@@ -62,6 +62,9 @@
             <tbody id="tableBody">
                 </tbody>
         </table>
+		<button onclick="cleanBearTrapDatabase()" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 20px; text-transform: uppercase;">
+    🗑️ Clear Bear Trap
+</button>
     </div>
 </div>
 
@@ -85,6 +88,13 @@
         });
     }
 
+    function formatDisplayDate(dateStr) {
+        if(!dateStr) return "";
+        const parts = dateStr.split('-');
+        if(parts.length < 3) return dateStr;
+        return `${parts[2]}/${parts[1]}`;
+    }
+
     function renderTable() {
         const currentEvent = document.getElementById('eventSelect').value;
         const players = masterData.alliance_database || {};
@@ -94,7 +104,18 @@
         
         body.innerHTML = "";
 
-        // 1. ADAPTATION DE L'ENTÊTE (Ajout des deux colonnes pour le Bear Trap)
+        // Trouver dynamiquement les 4 dates les plus récentes globales
+        let uniqueDates = new Set();
+        if (currentEvent === 'beartrap' && masterData.beartrap?.reports) {
+            Object.keys(masterData.beartrap.reports).forEach(pId => {
+                Object.keys(masterData.beartrap.reports[pId]).forEach(dateKey => {
+                    uniqueDates.add(dateKey);
+                });
+            });
+        }
+        const last4Dates = Array.from(uniqueDates).sort((a, b) => b.localeCompare(a)).slice(0, 4);
+
+        // 1. GENERATION DE L'ENTÊTE
         if (currentEvent === 'swordland') {
             header.innerHTML = `
                 <tr>
@@ -104,31 +125,42 @@
                     <th>Points Scored</th>
                 </tr>`;
         } else if (currentEvent === 'beartrap') {
+            let dateHeadersHtml = "";
+            for (let i = 0; i < 4; i++) {
+                if (last4Dates[i]) {
+                    dateHeadersHtml += `<th>Report ${formatDisplayDate(last4Dates[i])}</th>`;
+                } else {
+                    dateHeadersHtml += `<th>No Data Yet</th>`;
+                }
+            }
             header.innerHTML = `
                 <tr>
                     <th>Player Name</th>
                     <th>Current Power</th>
-                    <th>Trap 1 Misplays</th>
-                    <th>Trap 2 Misplays</th>
+                    ${dateHeadersHtml}
                 </tr>`;
         }
 
-        // Compilation et préparation des données pour le tri
+        // Préparation et compilation des données
         const sortedPlayerIds = Object.keys(players).map(id => {
-            let t1Errors = [];
-            let t2Errors = [];
-            
+            let totalErrorsLast4Days = 0; // Compteur spécifique aux 4 colonnes affichées
+            let historyByDate = {};
+
             if (currentEvent === 'beartrap') {
                 const bData = masterData.beartrap?.reports?.[id] || {};
-                Object.keys(bData).forEach(key => {
-                    const report = bData[key];
-                    if (report.errors) {
-                        // Tri sélectif selon la valeur du piège ("Trap 1" ou "Trap 2")
-                        if (report.trap === 'Trap 1') {
-                            t1Errors = t1Errors.concat(report.errors);
-                        } else if (report.trap === 'Trap 2') {
-                            t2Errors = t2Errors.concat(report.errors);
-                        }
+                
+                // On extrait uniquement les données et les erreurs des 4 dates ciblées
+                last4Dates.forEach(dateKey => {
+                    const dayReport = bData[dateKey];
+                    if (dayReport && dayReport.errors && dayReport.errors.length > 0) {
+                        historyByDate[dateKey] = {
+                            errors: dayReport.errors,
+                            trap: dayReport.trap
+                        };
+                        // Ajout au cumul du tri dynamique
+                        totalErrorsLast4Days += dayReport.errors.length;
+                    } else {
+                        historyByDate[dateKey] = null;
                     }
                 });
             }
@@ -137,28 +169,25 @@
                 id: id,
                 name: players[id].name,
                 power: players[id].power || 0,
-                t1Count: t1Errors.length,
-                t2Count: t2Errors.length,
-                totalErrors: t1Errors.length + t2Errors.length,
-                t1Details: t1Errors,
-                t2Details: t2Errors
+                totalErrors: totalErrorsLast4Days, // Stocke uniquement la somme des 4 dates actives
+                historyByDate: historyByDate
             };
         });
 
-        // 2. LOGIQUE DE TRI DYNAMIQUE
+        // 2. LOGIQUE DE TRI MIS À JOUR
         if (currentEvent === 'swordland') {
             sortedPlayerIds.sort((a, b) => b.power - a.power);
         } else if (currentEvent === 'beartrap') {
-            // Tri par le TOTAL des erreurs des deux pièges combinés (les pires en haut)
+            // Tri décroissant basé sur le cumul des erreurs des 4 rapports affichés
             sortedPlayerIds.sort((a, b) => {
                 if (b.totalErrors !== a.totalErrors) {
-                    return b.totalErrors - a.totalErrors;
+                    return b.totalErrors - a.totalErrors; // Le plus d'erreurs en haut
                 }
-                return b.power - a.power;
+                return b.power - a.power; // En cas d'égalité, tri par puissance
             });
         }
 
-        // 3. INJECTION DES DONNÉES DANS LE TABLEAU
+        // 3. INJECTION DANS LE DOM
         sortedPlayerIds.forEach(playerObj => {
             const id = playerObj.id;
             const p = players[id];
@@ -172,20 +201,26 @@
             } 
             
             else if (currentEvent === 'beartrap') {
-                // Remplissage Colonne TRAP 1
-                if (playerObj.t1Count === 0) {
-                    rowHtml += `<td><span class="tag tag-ok">🟢 Clean</span></td>`;
-                } else {
-                    const tagsT1 = playerObj.t1Details.map(err => `<span class="tag tag-danger" style="font-size:0.7rem;">${err}</span>`).join(' ');
-                    rowHtml += `<td><div style="margin-bottom:4px;"><span class="tag tag-danger">⚠️ ${playerObj.t1Count} Error(s)</span></div>${tagsT1}</td>`;
-                }
-
-                // Remplissage Colonne TRAP 2
-                if (playerObj.t2Count === 0) {
-                    rowHtml += `<td><span class="tag tag-ok">🟢 Clean</span></td>`;
-                } else {
-                    const tagsT2 = playerObj.t2Details.map(err => `<span class="tag tag-danger" style="font-size:0.7rem;">${err}</span>`).join(' ');
-                    rowHtml += `<td><div style="margin-bottom:4px;"><span class="tag tag-danger">⚠️ ${playerObj.t2Count} Error(s)</span></div>${tagsT2}</td>`;
+                for (let i = 0; i < 4; i++) {
+                    const targetDate = last4Dates[i];
+                    
+                    if (!targetDate) {
+                        rowHtml += `<td><span class="no-data">-</span></td>`;
+                    } else {
+                        const dayData = playerObj.historyByDate[targetDate];
+                        
+                        if (!dayData) {
+                            rowHtml += `<td><span class="tag tag-ok">🟢 Clean</span></td>`;
+                        } else {
+                            const labelTrap = dayData.trap === 'Trap 1' ? 'T1' : 'T2';
+                            const tagsHtml = dayData.errors.map(err => `<span class="tag tag-danger" style="font-size:0.65rem; padding: 2px 4px;">${err}</span>`).join(' ');
+                            
+                            rowHtml += `<td>
+                                <div style="margin-bottom:3px;"><span class="tag tag-danger" style="background: #ef4444; color: white;">⚠️ ${labelTrap} (${dayData.errors.length})</span></div>
+                                <div>${tagsHtml}</div>
+                            </td>`;
+                        }
+                    }
                 }
             }
 
@@ -207,6 +242,19 @@
     }
 
     loadData();
+	
+	
+	function cleanBearTrapDatabase() {
+    if (!confirm("ATTENTION : Cela va supprimer définitivement TOUT l'historique des rapports Bear Trap. Les autres données (Swordland, membres, etc.) ne seront pas touchées. Voulez-vous continuer ?")) return;
+    
+    db.ref('beartrap/reports').remove()
+        .then(() => { 
+            alert("La base de données Bear Trap a été nettoyée avec succès !"); 
+        })
+        .catch((error) => { 
+            alert("Erreur lors du nettoyage : " + error.message); 
+        });
+}
 </script>
 </body>
 </html>
