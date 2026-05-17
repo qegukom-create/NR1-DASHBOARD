@@ -163,7 +163,7 @@
                         historyByDate[dateKey] = {
                             errors: dayReport.errors,
                             trap: dayReport.trap,
-                            messageSent: dayReport.messageSent || false // Récupération du statut du message
+                            messageSent: dayReport.messageSent || false
                         };
                         totalErrorsLast4Days += dayReport.errors.length;
                     } else {
@@ -188,10 +188,14 @@
                 });
             }
 
+            // Prise en charge des alias
+            const member = players[id];
+            const displayName = member.aliases ? `${member.name} (${member.aliases})` : member.name;
+
             return {
                 id: id,
-                name: players[id].name,
-                power: players[id].power || 0,
+                name: displayName,
+                power: member.power || 0,
                 totalErrors: totalErrorsLast4Days, 
                 totalPoints: totalPointsLast4Weeks,
                 historyByDate: historyByDate
@@ -216,8 +220,7 @@
 
         sortedPlayerIds.forEach(playerObj => {
             const id = playerObj.id;
-            const p = players[id];
-            let rowHtml = `<td><b>${p.name}</b></td><td class="power-text">${p.power}M</td>`;
+            let rowHtml = `<td><b>${playerObj.name}</b></td><td class="power-text">${playerObj.power}M</td>`;
 
             for (let i = 0; i < 4; i++) {
                 const targetDate = last4Dates[i];
@@ -234,7 +237,6 @@
                             const labelTrap = dayData.trap === 'Trap 1' ? 'T1' : 'T2';
                             const tagsHtml = dayData.errors.map(err => `<span class="tag tag-danger" style="font-size:0.65rem; padding: 2px 4px;">${err}</span>`).join(' ');
                             
-                            // Logique de classe CSS et icône du bouton Message
                             const msgClass = dayData.messageSent ? 'btn-msg-sent' : 'btn-msg-not-sent';
                             const msgText = dayData.messageSent ? '✅ Sent' : '✉️ Remind';
 
