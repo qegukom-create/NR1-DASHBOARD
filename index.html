@@ -32,6 +32,13 @@
         .tag-ok { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
         .tag-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); margin: 2px; }
         .no-data { opacity: 0.4; font-style: italic; }
+
+        /* Style des boutons d'envoi de messages */
+        .btn-msg { border: none; padding: 3px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; cursor: pointer; transition: 0.2s; margin-left: 5px; display: inline-flex; align-items: center; gap: 3px; }
+        .btn-msg-not-sent { background: #334155; color: #94a3b8; border: 1px solid #475569; }
+        .btn-msg-not-sent:hover { background: #475569; color: white; }
+        .btn-msg-sent { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+        .btn-msg-sent:hover { background: rgba(34, 197, 94, 0.3); }
     </style>
 </head>
 <body>
@@ -87,15 +94,19 @@
         });
     }
 
-    // Adapte l'affichage des clés de date (fonctionne pour "YYYY-MM-DD" et pour les semaines "YYYY-WXX")
     function formatDisplayDate(dateStr) {
         if(!dateStr) return "";
         if(dateStr.includes('-W')) {
-            return dateStr.replace('-W', ' / W'); // Exemple: 2026 / W20
+            return dateStr.replace('-W', ' / W');
         }
         const parts = dateStr.split('-');
         if(parts.length < 3) return dateStr;
         return `${parts[2]}/${parts[1]}`;
+    }
+
+    function toggleMessageStatus(playerId, dateKey, currentStatus) {
+        const nextStatus = !currentStatus;
+        db.ref(`beartrap/reports/${playerId}/${dateKey}/messageSent`).set(nextStatus);
     }
 
     function renderTable() {
@@ -107,7 +118,6 @@
         
         body.innerHTML = "";
 
-        // Trouver dynamiquement les 4 dates/semaines les plus récentes globales selon l'événement choisi
         let uniqueDates = new Set();
         if (currentEvent === 'beartrap' && masterData.beartrap?.reports) {
             Object.keys(masterData.beartrap.reports).forEach(pId => {
@@ -116,7 +126,6 @@
                 });
             });
         } else if (currentEvent === 'swordland' && masterData.experience_reports) {
-            // SÉCURITÉ & CORRECTION : On pointe directement sur experience_reports (généré par ta page Experience)
             Object.keys(masterData.experience_reports).forEach(pId => {
                 Object.keys(masterData.experience_reports[pId]).forEach(weekKey => {
                     uniqueDates.add(weekKey);
@@ -125,7 +134,6 @@
         }
         const last4Dates = Array.from(uniqueDates).sort((a, b) => b.localeCompare(a)).slice(0, 4);
 
-        // 1. GENERATION DE L'ENTÊTE DYNAMIQUE (4 colonnes de rapports)
         let dateHeadersHtml = "";
         for (let i = 0; i < 4; i++) {
             if (last4Dates[i]) {
@@ -142,7 +150,6 @@
                 ${dateHeadersHtml}
             </tr>`;
 
-        // Préparation et compilation des données des joueurs
         const sortedPlayerIds = Object.keys(players).map(id => {
             let totalErrorsLast4Days = 0; 
             let totalPointsLast4Weeks = 0;
@@ -155,7 +162,8 @@
                     if (dayReport && dayReport.errors && dayReport.errors.length > 0) {
                         historyByDate[dateKey] = {
                             errors: dayReport.errors,
-                            trap: dayReport.trap
+                            trap: dayReport.trap,
+                            messageSent: dayReport.messageSent || false // Récupération du statut du message
                         };
                         totalErrorsLast4Days += dayReport.errors.length;
                     } else {
@@ -163,7 +171,6 @@
                     }
                 });
             } else if (currentEvent === 'swordland') {
-                // SÉCURITÉ & CORRECTION : On extrait les données de experience_reports
                 const sData = masterData.experience_reports?.[id] || {};
                 last4Dates.forEach(weekKey => {
                     const weekReport = sData[weekKey];
@@ -191,24 +198,22 @@
             };
         });
 
-        // 2. LOGIQUE DE TRI DYNAMIQUE
         if (currentEvent === 'beartrap') {
             sortedPlayerIds.sort((a, b) => {
                 if (b.totalErrors !== a.totalErrors) {
-                    return b.totalErrors - a.totalErrors; // Plus d'erreurs en haut
+                    return b.totalErrors - a.totalErrors;
                 }
                 return b.power - a.power; 
             });
         } else if (currentEvent === 'swordland') {
             sortedPlayerIds.sort((a, b) => {
                 if (b.totalPoints !== a.totalPoints) {
-                    return b.totalPoints - a.totalPoints; // Plus de points d'expérience en haut
+                    return b.totalPoints - a.totalPoints;
                 }
                 return b.power - a.power; 
             });
         }
 
-        // 3. INJECTION DANS LE DOM
         sortedPlayerIds.forEach(playerObj => {
             const id = playerObj.id;
             const p = players[id];
@@ -229,8 +234,17 @@
                             const labelTrap = dayData.trap === 'Trap 1' ? 'T1' : 'T2';
                             const tagsHtml = dayData.errors.map(err => `<span class="tag tag-danger" style="font-size:0.65rem; padding: 2px 4px;">${err}</span>`).join(' ');
                             
+                            // Logique de classe CSS et icône du bouton Message
+                            const msgClass = dayData.messageSent ? 'btn-msg-sent' : 'btn-msg-not-sent';
+                            const msgText = dayData.messageSent ? '✅ Sent' : '✉️ Remind';
+
                             rowHtml += `<td>
-                                <div style="margin-bottom:3px;"><span class="tag tag-danger" style="background: #ef4444; color: white;">⚠️ ${labelTrap} (${dayData.errors.length})</span></div>
+                                <div style="margin-bottom:5px; display:flex; align-items:center;">
+                                    <span class="tag tag-danger" style="background: #ef4444; color: white; margin:0;">⚠️ ${labelTrap} (${dayData.errors.length})</span>
+                                    <button class="btn-msg ${msgClass}" onclick="toggleMessageStatus('${id}', '${targetDate}', ${dayData.messageSent})">
+                                        ${msgText}
+                                    </button>
+                                </div>
                                 <div>${tagsHtml}</div>
                             </td>`;
                         }
